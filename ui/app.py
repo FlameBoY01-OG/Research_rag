@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 
 API_URL = "http://localhost:8000/ask"
+UPLOAD_URL = "http://localhost:8000/upload"
+
 
 st.set_page_config(
     page_title="Research Paper Assistant",
@@ -11,6 +13,33 @@ st.set_page_config(
 
 st.title("📄 Research Paper Assistant")
 st.caption("Ask questions about your research papers")
+
+st.subheader("📄 Upload a Research Paper (PDF)")
+
+uploaded_file = st.file_uploader(
+    "Choose a PDF file",
+    type=["pdf"]
+)
+
+if uploaded_file is not None:
+    if st.button("Upload PDF"):
+        with st.spinner("Uploading and indexing PDF..."):
+            response = requests.post(
+                UPLOAD_URL,
+                files={"file": uploaded_file},
+                timeout=120
+            )
+
+        if response.status_code == 200:
+            data = response.json()
+            st.success(
+                f"✅ {data['file']} uploaded "
+                f"({data['chunks_added']} chunks indexed)"
+            )
+        else:
+            st.error("❌ Failed to upload PDF")
+
+
 
 question = st.text_input(
     "Enter your question",

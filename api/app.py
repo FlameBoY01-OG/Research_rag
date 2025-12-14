@@ -8,6 +8,11 @@ from rag.vectorstore import FaissVectorStore
 from rag.generator import generate_answer
 from rag.question_type import classify_question
 
+from fastapi import UploadFile, File
+import shutil
+from ingest.load_pdf import load_pdfs
+from ingest.chunk import chunk_pdf_documents
+
 
 # -----------------------------
 # Paths
@@ -116,3 +121,48 @@ def ask_question(req: QuestionRequest):
         answer=answer,
         sources=sources
     )
+
+@app.post("/upload")
+def upload_pdf(file: UploadFile = File(...)):
+    # 1. Validate file type
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are allowed"
+        )
+
+    # 2. Save PDF to disk
+    pdf_path = f"data/papers/{file.filename}"
+
+    with open(pdf_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 3. Load only this PDF
+    documents = load_pdfs("data/papers")
+    new_docs = [d for d in documents if d["source"] == file.filename]
+
+    if not new_docs:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not extract text from PDF"
+        )
+
+    # 4. Chunk only new document
+    new_chunks = chunk_pdf_documents(new_docs)
+
+    # 5. Add to FAISS index
+    for c in new_chunks:
+        emb = get_embedding(c["text"])
+        store.add(emb, c)
+
+    # 6. Persist updated index
+    store.save(FAISS_PATH)
+
+    with open(META_PATH, "wb") as f:
+        pickle.dump(store.metadata, f)
+
+    return {
+        "status": "success",
+        "file": file.filename,
+        "chunks_added": len(new_chunks)
+    }
