@@ -1,5 +1,11 @@
 import streamlit as st
 import requests
+import uuid
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+
 
 API_URL = "http://localhost:8000/ask"
 UPLOAD_URL = "http://localhost:8000/upload"
@@ -53,7 +59,10 @@ if st.button("Ask"):
         with st.spinner("Thinking..."):
             response = requests.post(
                 API_URL,
-                json={"question": question},
+                json={
+                    "question": question,
+                    "session_id": st.session_state.session_id
+                },
                 timeout=60
             )
 

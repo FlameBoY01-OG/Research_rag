@@ -2,6 +2,8 @@ import os
 import pickle
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from collections import defaultdict
+
 
 from ingest.embed import get_embedding
 from rag.vectorstore import FaissVectorStore
@@ -30,6 +32,7 @@ app = FastAPI(
     description="Ask questions about research papers using a FAISS-backed RAG system",
     version="1.0.0"
 )
+chat_memory = defaultdict(list)
 
 
 # -----------------------------
@@ -37,6 +40,7 @@ app = FastAPI(
 # -----------------------------
 class QuestionRequest(BaseModel):
     question: str
+    session_id: str
 
 
 class AnswerResponse(BaseModel):
@@ -87,6 +91,12 @@ def ask_question(req: QuestionRequest):
             detail="Question cannot be empty."
         )
 
+    session_id = req.session_id
+    question = req.question.strip()
+
+    history = chat_memory[session_id]
+
+
     # Embed question
     query_embedding = get_embedding(question)
 
@@ -100,16 +110,22 @@ def ask_question(req: QuestionRequest):
         )
 
     # Build context with citations
-    context = "\n\n".join(
+    conversation = "\n".join(history[-6:])  # last 3 Q/A pairs
+
+    context = conversation + "\n\n" + "\n\n".join(
         f"[{c['source']} | page {c['page']}]\n{c['text']}"
         for c in top_chunks
     )
+
 
     # Classify question intent
     mode = classify_question(question)
 
     # Generate answer
     answer = generate_answer(context, question, mode=mode)
+    history.append(f"User: {question}")
+    history.append(f"Assistant: {answer}")
+
 
     # Prepare sources
     sources = [
