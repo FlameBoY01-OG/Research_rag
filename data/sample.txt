@@ -1,0 +1,12 @@
+Transformers are a type of neural network architecture introduced to handle
+sequence-to-sequence tasks. Unlike recurrent neural networks, transformers
+rely entirely on self-attention mechanisms to model dependencies between
+tokens in a sequence.
+
+The self-attention mechanism allows the model to weigh the importance of
+different tokens relative to each other. This enables transformers to
+capture long-range dependencies more efficiently than traditional models.
+
+Because of these properties, transformers have become the foundation of
+modern large language models and have been successfully applied to tasks
+such as machine translation, text summarization, and question answering.
