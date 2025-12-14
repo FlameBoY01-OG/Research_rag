@@ -29,7 +29,9 @@ class FaissVectorStore:
             if idx == -1:
                 continue
 
+            idx = int(idx)
             chunk = self.metadata[idx]
+
             results.append({
                 "text": chunk["text"],
                 "source": chunk["source"],
@@ -39,11 +41,9 @@ class FaissVectorStore:
 
         return results
 
-    # 🔥 MMR SEARCH (ADD THIS HERE)
     def search_mmr(self, query_embedding, top_k=3, fetch_k=10, lambda_mult=0.5):
         query_embedding = query_embedding / np.linalg.norm(query_embedding)
 
-        # 1. Fetch more candidates
         distances, indices = self.index.search(
             query_embedding.reshape(1, -1), fetch_k
         )
@@ -53,7 +53,9 @@ class FaissVectorStore:
             if idx == -1:
                 continue
 
+            idx = int(idx)
             meta = self.metadata[idx]
+
             candidates.append({
                 "embedding": self.index.reconstruct(idx),
                 "text": meta["text"],
@@ -64,12 +66,11 @@ class FaissVectorStore:
 
         selected = []
 
-        # 2. MMR selection
         while len(selected) < top_k and candidates:
-            best = None
+            best_idx = -1
             best_score = -1
 
-            for c in candidates:
+            for i, c in enumerate(candidates):
                 relevance = cosine_sim(query_embedding, c["embedding"])
 
                 diversity = 0
@@ -83,12 +84,13 @@ class FaissVectorStore:
 
                 if mmr_score > best_score:
                     best_score = mmr_score
-                    best = c
+                    best_idx = i
 
-            selected.append(best)
-            candidates.remove(best)
+            selected.append(candidates[best_idx])
+            candidates.pop(best_idx)   # ✅ SAFE removal
 
         return selected
+
 
     def save(self, path: str):
         faiss.write_index(self.index, path)
