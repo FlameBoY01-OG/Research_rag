@@ -1,30 +1,40 @@
 import requests
 
-OLLAMA_GENERATE_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "llama3.2"
 
 
-def generate_answer(context: str, question: str) -> str:
+def generate_answer(context: str, question: str, mode: str = "fact") -> str:
+    if mode == "summary":
+        system_prompt = (
+            "You are a research assistant. "
+            "Summarize the following context clearly and concisely. "
+            "Do not add information that is not present."
+        )
+    elif mode == "explanation":
+        system_prompt = (
+            "You are a research assistant. "
+            "Explain the answer clearly using the provided context only."
+        )
+    else:
+        system_prompt = (
+            "You are a research assistant. "
+            "Answer the question using only the provided context. "
+            "If the answer is not present, say you could not find it."
+        )
+
     prompt = f"""
-You are an AI assistant answering questions ONLY using the provided context.
+    {system_prompt}
 
-Rules:
-- Use ONLY the information in the context.
-- If the answer is not present, say:
-  "I could not find the answer in the provided document."
-- When answering, cite the chunks you used, like: [Chunk 1], [Chunk 2].
+    Context:
+    {context}
 
-Context:
-{context}
-
-Question:
-{question}
-
-Answer:
-"""
+    Question:
+    {question}
+    """
 
     response = requests.post(
-        OLLAMA_GENERATE_URL,
+        OLLAMA_URL,
         json={
             "model": MODEL,
             "prompt": prompt,
@@ -32,5 +42,4 @@ Answer:
         }
     )
 
-    response.raise_for_status()
-    return response.json()["response"].strip()
+    return response.json()["response"]
