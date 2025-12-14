@@ -54,6 +54,22 @@ def chunk_documents(documents, chunk_size: int = 500, overlap: int = 100):
     return all_chunks
 
 
+def chunk_pdf_documents(documents, chunk_size=500, overlap=100):
+    all_chunks = []
+
+    for doc in documents:
+        text_chunks = chunk_text(doc["text"], chunk_size, overlap)
+
+        for chunk in text_chunks:
+            all_chunks.append({
+                "source": doc["source"],
+                "page": doc["page"],
+                "text": chunk
+            })
+
+    return all_chunks
+
+
 if __name__ == "__main__":
     # Simple local test (single text file)
     with open("data/sample.txt", "r", encoding="utf-8") as f:

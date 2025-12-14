@@ -7,14 +7,15 @@ def load_pdfs(pdf_dir="data/papers"):
 
     for pdf_path in Path(pdf_dir).glob("*.pdf"):
         reader = PdfReader(pdf_path)
-        text = ""
 
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
+        for page_num, page in enumerate(reader.pages):
+            text = page.extract_text()
 
-        documents.append({
-            "source": pdf_path.name,
-            "text": text
-        })
+            if text and text.strip():
+                documents.append({
+                    "source": pdf_path.name,
+                    "page": page_num + 1,
+                    "text": text
+                })
 
     return documents
