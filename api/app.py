@@ -103,7 +103,8 @@ def ask_question(req: QuestionRequest):
     query_embedding = get_embedding(question)
 
     # Retrieve
-    top_chunks = store.search(query_embedding, top_k=3)
+    top_chunks = store.search_mmr(query_embedding, top_k=3)
+
     if not top_chunks:
         return AnswerResponse(
             answer="I could not find the answer in the documents.",
