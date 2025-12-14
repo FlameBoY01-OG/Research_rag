@@ -1,7 +1,7 @@
-from rag.generator import generate_answer
 import numpy as np
 from ingest.embed import get_embedding
 from ingest.chunk import chunk_text
+from rag.generator import generate_answer
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -9,39 +9,54 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 if __name__ == "__main__":
-    # 1. Load document
-    with open("data/sample.txt", "r", encoding="utf-8") as f:
-        text = f.read()
+    # 1. Load multiple text files (simulate multiple documents)
+    files = [
+        "data/sample.txt",
+        "data/sample2.txt",
+    ]
 
-    # 2. Chunk document
-    chunks = chunk_text(text)
+    chunks = []
 
-    # 3. Embed chunks
-    chunk_embeddings = [get_embedding(chunk) for chunk in chunks]
+    for file in files:
+        with open(file, "r", encoding="utf-8") as f:
+            text = f.read()
 
-    # 4. User question
-    question = "What are transformers good at?"
+        file_chunks = chunk_text(text)
+
+        for chunk in file_chunks:
+            chunks.append({
+                "source": file,
+                "text": chunk
+            })
+
+    # 2. Embed chunks
+    embeddings = [get_embedding(c["text"]) for c in chunks]
+
+    # 3. User question
+    question = "What are CNNs used for?"
     question_embedding = get_embedding(question)
 
-    # 5. Retrieve best chunk
+    # 4. Retrieve top-K chunks
     TOP_K = 3
 
     similarities = [
         cosine_similarity(question_embedding, emb)
-        for emb in chunk_embeddings
+        for emb in embeddings
     ]
 
     top_k_indices = np.argsort(similarities)[-TOP_K:][::-1]
     top_chunks = [chunks[i] for i in top_k_indices]
 
-
-    # 6. Generate grounded answer
+    # 5. Combine context with document citations
     combined_context = "\n\n".join(
-    [f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(top_chunks)]
+        [
+            f"[{c['source']}]\n{c['text']}"
+            for c in top_chunks
+        ]
     )
 
+    # 6. Generate grounded answer
     answer = generate_answer(combined_context, question)
-
 
     print("QUESTION:")
     print(question)
@@ -50,6 +65,5 @@ if __name__ == "__main__":
     print(answer)
 
     print("\nSOURCES:")
-    for idx in top_k_indices:
-        print(f"- Chunk {idx + 1}")
-
+    for c in top_chunks:
+        print(f"- {c['source']}")
