@@ -8,8 +8,11 @@ def generate_answer(context: str, question: str) -> str:
     prompt = f"""
 You are an AI assistant answering questions ONLY using the provided context.
 
-If the answer is not present in the context, say:
-"I could not find the answer in the provided document."
+Rules:
+- Use ONLY the information in the context.
+- If the answer is not present, say:
+  "I could not find the answer in the provided document."
+- When answering, cite the chunks you used, like: [Chunk 1], [Chunk 2].
 
 Context:
 {context}

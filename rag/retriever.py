@@ -20,22 +20,36 @@ if __name__ == "__main__":
     chunk_embeddings = [get_embedding(chunk) for chunk in chunks]
 
     # 4. User question
-    question = "What optimizer do transformers use?"
+    question = "What are transformers good at?"
     question_embedding = get_embedding(question)
 
     # 5. Retrieve best chunk
+    TOP_K = 3
+
     similarities = [
         cosine_similarity(question_embedding, emb)
         for emb in chunk_embeddings
     ]
-    best_idx = int(np.argmax(similarities))
-    best_chunk = chunks[best_idx]
+
+    top_k_indices = np.argsort(similarities)[-TOP_K:][::-1]
+    top_chunks = [chunks[i] for i in top_k_indices]
+
 
     # 6. Generate grounded answer
-    answer = generate_answer(best_chunk, question)
+    combined_context = "\n\n".join(
+    [f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(top_chunks)]
+    )
+
+    answer = generate_answer(combined_context, question)
+
 
     print("QUESTION:")
     print(question)
 
     print("\nANSWER:")
     print(answer)
+
+    print("\nSOURCES:")
+    for idx in top_k_indices:
+        print(f"- Chunk {idx + 1}")
+
