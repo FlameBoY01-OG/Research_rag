@@ -1,7 +1,9 @@
+# api/app.py
 import os
 import pickle
 import shutil
 from collections import defaultdict
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -14,18 +16,16 @@ from rag.vectorstore import FaissVectorStore
 from rag.generator import generate_answer
 from rag.question_type import classify_question
 
-
-# -----------------------------
+# =============================
 # Paths
-# -----------------------------
+# =============================
 INDEX_DIR = "rag/index"
 FAISS_PATH = os.path.join(INDEX_DIR, "faiss.index")
 META_PATH = os.path.join(INDEX_DIR, "metadata.pkl")
 
-
-# -----------------------------
-# FastAPI App
-# -----------------------------
+# =============================
+# App
+# =============================
 app = FastAPI(
     title="Research Paper RAG API",
     description="Ask, summarize, and compare research papers using RAG",
@@ -35,9 +35,9 @@ app = FastAPI(
 chat_memory = defaultdict(list)
 
 
-# -----------------------------
+# =============================
 # Models
-# -----------------------------
+# =============================
 class QuestionRequest(BaseModel):
     question: str
     session_id: str
@@ -55,9 +55,9 @@ class CompareRequest(BaseModel):
     role: str = "student"
 
 
-# -----------------------------
-# Startup
-# -----------------------------
+# =============================
+# Startup: load vector DB
+# =============================
 @app.on_event("startup")
 def load_vector_db():
     global store
@@ -72,9 +72,9 @@ def load_vector_db():
     store.load(FAISS_PATH, metadata)
 
 
-# -----------------------------
+# =============================
 # Helpers
-# -----------------------------
+# =============================
 def normalize_scores(chunks):
     scores = [c["score"] for c in chunks]
     max_s, min_s = max(scores), min(scores)
@@ -89,19 +89,36 @@ def normalize_scores(chunks):
     return chunks
 
 
-# -----------------------------
+def safe_generate_answer(context: str, question: str, mode: Optional[str] = None, role: Optional[str] = None) -> str:
+    """
+    Call generate_answer safely:
+    - Try calling with role if provided
+    - Fall back gracefully to older signatures if needed
+    """
+    try:
+        if role is None:
+            return generate_answer(context=context, question=question, mode=mode)
+        else:
+            return generate_answer(context=context, question=question, mode=mode, role=role)
+    except TypeError:
+        # signature might not accept role or mode keyword names; try fewer args
+        try:
+            return generate_answer(context=context, question=question)
+        except Exception as e:
+            # as a last resort, re-raise to surface the underlying problem
+            raise RuntimeError(f"generate_answer failed: {e}") from e
+
+
+# =============================
 # Routes
-# -----------------------------
+# =============================
 @app.get("/")
 def health():
-    return {
-        "status": "running",
-        "message": "Research Paper RAG API is live"
-    }
+    return {"status": "running"}
 
 
 # -----------------------------
-# Ask Question
+# Ask
 # -----------------------------
 @app.post("/ask", response_model=AnswerResponse)
 def ask_question(req: QuestionRequest):
@@ -115,10 +132,16 @@ def ask_question(req: QuestionRequest):
     history = chat_memory[session_id]
 
     # Embed query
-    query_embedding = get_embedding(question)
+    try:
+        query_embedding = get_embedding(question)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to embed question: {e}")
 
-    # Retrieve with MMR
-    top_chunks = store.search_mmr(query_embedding, top_k=3)
+    # Retrieve using MMR
+    try:
+        top_chunks = store.search_mmr(query_embedding, top_k=3)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retrieval error: {e}")
 
     if not top_chunks:
         return AnswerResponse(
@@ -128,7 +151,7 @@ def ask_question(req: QuestionRequest):
 
     top_chunks = normalize_scores(top_chunks)
 
-    # Conversation context
+    # Conversation memory
     conversation = "\n".join(history[-6:])
 
     context = conversation + "\n\n" + "\n\n".join(
@@ -138,12 +161,11 @@ def ask_question(req: QuestionRequest):
 
     mode = classify_question(question)
 
-    answer = generate_answer(
-        context=context,
-        question=question,
-        mode=mode,
-        role=role
-    )
+    # Generate answer using safe wrapper
+    try:
+        answer = safe_generate_answer(context=context, question=question, mode=mode, role=role)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation error: {e}")
 
     history.append(f"User: {question}")
     history.append(f"Assistant: {answer}")
@@ -201,7 +223,7 @@ def upload_pdf(file: UploadFile = File(...)):
 
 
 # -----------------------------
-# Summarize Papers
+# Summarize
 # -----------------------------
 @app.post("/summarize")
 def summarize_papers(role: str = "student"):
@@ -221,17 +243,16 @@ def summarize_papers(role: str = "student"):
         "- Conclusions"
     )
 
-    summary = generate_answer(
-        context=context,
-        question=summary_prompt,
-        role=role
-    )
+    try:
+        summary = safe_generate_answer(context=context, question=summary_prompt, mode="summarize", role=role)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Summarization error: {e}")
 
     return {"summary": summary}
 
 
 # -----------------------------
-# Compare Papers
+# Compare
 # -----------------------------
 @app.post("/compare")
 def compare_papers(req: CompareRequest):
@@ -259,15 +280,17 @@ def compare_papers(req: CompareRequest):
         "- Key differences"
     )
 
-    answer = generate_answer(
-        context=context,
-        question=compare_prompt,
-        role=role
-    )
+    try:
+        answer = safe_generate_answer(context=context, question=compare_prompt, mode="compare", role=role)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Comparison generation error: {e}")
 
     return {"comparison": answer}
 
 
+# -----------------------------
+# List Papers
+# -----------------------------
 @app.get("/papers")
 def list_papers():
     if not store.metadata:
@@ -275,3 +298,23 @@ def list_papers():
 
     papers = sorted({c["source"] for c in store.metadata})
     return {"papers": papers}
+
+
+# -----------------------------
+# Paper text helper (for UI diff)
+# -----------------------------
+@app.get("/paper_text")
+def get_paper_text(name: str):
+    """
+    Return the concatenated text of all chunks for a given paper name.
+    Used by the UI to compute diffs / local summaries. Safe and read-only.
+    """
+    if not store.metadata:
+        return {"text": ""}
+
+    chunks = [c for c in store.metadata if c["source"] == name]
+    if not chunks:
+        return {"text": ""}
+
+    text = "\n\n".join(c["text"] for c in chunks)
+    return {"text": text}
