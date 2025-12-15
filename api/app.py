@@ -1,9 +1,10 @@
 import os
 import pickle
+import shutil
+from collections import defaultdict
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from collections import defaultdict
-import shutil
 
 from ingest.embed import get_embedding
 from ingest.load_pdf import load_pdfs
@@ -27,7 +28,7 @@ META_PATH = os.path.join(INDEX_DIR, "metadata.pkl")
 # -----------------------------
 app = FastAPI(
     title="Research Paper RAG API",
-    description="Ask questions about research papers using a FAISS-backed RAG system",
+    description="Ask, summarize, and compare research papers using RAG",
     version="1.0.0"
 )
 
@@ -40,11 +41,18 @@ chat_memory = defaultdict(list)
 class QuestionRequest(BaseModel):
     question: str
     session_id: str
+    role: str = "student"
 
 
 class AnswerResponse(BaseModel):
     answer: str
     sources: list[str]
+
+
+class CompareRequest(BaseModel):
+    paper_a: str
+    paper_b: str
+    role: str = "student"
 
 
 # -----------------------------
@@ -73,7 +81,7 @@ def normalize_scores(chunks):
 
     for c in chunks:
         if max_s == min_s:
-            c["confidence"] = 100
+            c["confidence"] = 100.0
         else:
             c["confidence"] = round(
                 100 * (c["score"] - min_s) / (max_s - min_s), 1
@@ -86,23 +94,30 @@ def normalize_scores(chunks):
 # -----------------------------
 @app.get("/")
 def health():
-    return {"status": "running"}
+    return {
+        "status": "running",
+        "message": "Research Paper RAG API is live"
+    }
 
 
+# -----------------------------
+# Ask Question
+# -----------------------------
 @app.post("/ask", response_model=AnswerResponse)
 def ask_question(req: QuestionRequest):
     question = req.question.strip()
     session_id = req.session_id
+    role = req.role.lower()
 
     if not question:
         raise HTTPException(status_code=400, detail="Empty question")
 
     history = chat_memory[session_id]
 
-    # Embed question
+    # Embed query
     query_embedding = get_embedding(question)
 
-    # Retrieve
+    # Retrieve with MMR
     top_chunks = store.search_mmr(query_embedding, top_k=3)
 
     if not top_chunks:
@@ -122,7 +137,13 @@ def ask_question(req: QuestionRequest):
     )
 
     mode = classify_question(question)
-    answer = generate_answer(context, question, mode=mode)
+
+    answer = generate_answer(
+        context=context,
+        question=question,
+        mode=mode,
+        role=role
+    )
 
     history.append(f"User: {question}")
     history.append(f"Assistant: {answer}")
@@ -142,12 +163,17 @@ def ask_question(req: QuestionRequest):
     return AnswerResponse(answer=answer, sources=sources)
 
 
+# -----------------------------
+# Upload PDF
+# -----------------------------
 @app.post("/upload")
 def upload_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDFs allowed")
 
+    os.makedirs("data/papers", exist_ok=True)
     pdf_path = f"data/papers/{file.filename}"
+
     with open(pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
@@ -172,3 +198,80 @@ def upload_pdf(file: UploadFile = File(...)):
         "file": file.filename,
         "chunks_added": len(new_chunks)
     }
+
+
+# -----------------------------
+# Summarize Papers
+# -----------------------------
+@app.post("/summarize")
+def summarize_papers(role: str = "student"):
+    if not store.metadata:
+        raise HTTPException(status_code=400, detail="No papers indexed")
+
+    context = "\n\n".join(
+        f"[{c['source']} | page {c['page']}]\n{c['text']}"
+        for c in store.metadata[:8]
+    )
+
+    summary_prompt = (
+        "Provide a structured summary including:\n"
+        "- Problem statement\n"
+        "- Methods\n"
+        "- Contributions\n"
+        "- Conclusions"
+    )
+
+    summary = generate_answer(
+        context=context,
+        question=summary_prompt,
+        role=role
+    )
+
+    return {"summary": summary}
+
+
+# -----------------------------
+# Compare Papers
+# -----------------------------
+@app.post("/compare")
+def compare_papers(req: CompareRequest):
+    role = req.role.lower()
+
+    chunks_a = [c for c in store.metadata if c["source"] == req.paper_a]
+    chunks_b = [c for c in store.metadata if c["source"] == req.paper_b]
+
+    if not chunks_a or not chunks_b:
+        raise HTTPException(status_code=400, detail="One or both papers not found")
+
+    context = (
+        "PAPER A:\n"
+        + "\n\n".join(c["text"] for c in chunks_a[:5])
+        + "\n\nPAPER B:\n"
+        + "\n\n".join(c["text"] for c in chunks_b[:5])
+    )
+
+    compare_prompt = (
+        "Compare the two papers in terms of:\n"
+        "- Goals\n"
+        "- Methods\n"
+        "- Strengths\n"
+        "- Weaknesses\n"
+        "- Key differences"
+    )
+
+    answer = generate_answer(
+        context=context,
+        question=compare_prompt,
+        role=role
+    )
+
+    return {"comparison": answer}
+
+
+@app.get("/papers")
+def list_papers():
+    if not store.metadata:
+        return {"papers": []}
+
+    papers = sorted({c["source"] for c in store.metadata})
+    return {"papers": papers}
