@@ -423,34 +423,7 @@ python ingest/chunk.py
 # Test retrieval pipeline
 python rag/retriever.py
 ```
-
-## 🚀 Status
-
-**Production Ready** – Core features complete and tested.
-
-Future enhancements:
-
-- [ ] Multi-document conversation context
-- [ ] Export Q&A sessions to PDF
-- [ ] Custom prompt templates per role
-- [ ] Support for non-PDF documents (markdown, txt)
-- [ ] Hybrid search (semantic + keyword)
-
 ## 📝 License
 
 MIT License - feel free to use this project for research or commercial purposes.
 
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repo
-2. Create a feature branch
-3. Test thoroughly with multiple PDFs
-4. Submit a pull request
-
-For major changes, open an issue first to discuss the approach.
-
----
-
-**Built with ❤️ by the Locked_In team**
