@@ -1,429 +1,108 @@
-# Research Paper Chatbot (RAG)
+# Research Paper RAG (Retrieval-Augmented Generation) System
 
-A complete Retrieval-Augmented Generation (RAG) system for chatting with research papers using a fully offline LLM served by Ollama. Features FastAPI backend, Streamlit UI, and automated PDF ingestion with FAISS vector indexing.
+Welcome! If you are reviewing this project (perhaps for an interview), this README serves as a comprehensive guide to understanding what this project is, how it works under the hood, and its underlying architecture. 
 
-## ✨ Features
+## 🌟 What is this Project?
 
-- **Conversational Q&A**: Ask natural language questions and get grounded answers with page-level citations
-- **One-Click Summaries**: Generate structured summaries of papers (problem, methods, contributions, conclusions)
-- **Paper Comparison**: Side-by-side analysis comparing goals, methods, strengths, and differences
-- **Dynamic PDF Upload**: Upload PDFs from the UI; automatically chunks, embeds, and indexes them
-- **Role-Aware Responses**: Tailored answers for students (simple explanations), researchers (technical detail), and reviewers (critical analysis)
-- **Advanced Retrieval**: Uses MMR (Maximal Marginal Relevance) to balance relevance and diversity
-- **Fully Offline**: All embeddings and generation happen locally via Ollama
-- **Conversational Memory**: Maintains chat context across questions in a session
+This project is a fully offline **Retrieval-Augmented Generation (RAG)** system designed specifically for interacting with research papers (PDFs). It allows users to:
+1. **Upload and Index** research papers dynamically.
+2. **Chat/Q&A** with the papers to get grounded answers with exact page-level citations.
+3. **Summarize** papers with a single click (extracting problem statements, methods, and contributions).
+4. **Compare** two different papers side-by-side to contrast their goals, methods, and results.
 
-## 🛠 Tech Stack
+It achieves this by combining a **FastAPI** backend for robust API endpoints, a **Streamlit** frontend for an interactive UI, and **Ollama** for running LLMs (Large Language Models) locally, ensuring complete privacy and offline capability.
 
-- **Backend**: FastAPI + Uvicorn
-- **Frontend**: Streamlit
-- **Vector Store**: FAISS (Facebook AI Similarity Search)
-- **LLM & Embeddings**: Ollama (`llama3.2:latest`, `nomic-embed-text`)
-- **PDF Processing**: PyPDF
-- **Core Libraries**: NumPy, Requests, Pydantic
+---
 
-## 📋 Prerequisites
+## 🏗️ Architecture & How It Works
 
-1. **Python 3.10+** installed
-2. **Ollama** running locally ([Install Ollama](https://ollama.ai))
-3. Pull required models:
+The system is broken down into two main pipelines: **Ingestion** (processing PDFs) and **Retrieval/Generation** (answering questions).
+
+### 1. The Ingestion Pipeline (Data Preparation)
+Before the system can answer questions, it needs to understand the documents. This happens in the following steps:
+- **PDF Loading (`ingest/load_pdf.py`)**: Uses `pypdf` to parse uploaded PDF files and extract text page by page.
+- **Chunking (`ingest/chunk.py`)**: The extracted text is split into smaller, overlapping segments (default 500 characters with 100 character overlap). Overlapping ensures that context is not lost at the boundaries of chunks.
+- **Embedding (`ingest/embed.py`)**: Each text chunk is converted into a 768-dimensional numerical vector using the `nomic-embed-text` model via Ollama. Embeddings capture the semantic meaning of the text.
+- **Vector Storage (`rag/vectorstore.py`)**: The embeddings are stored in a **FAISS** (Facebook AI Similarity Search) index using Inner Product (Cosine Similarity). FAISS allows for lightning-fast similarity searches across thousands of chunks. Metadata (source file, page number, raw text) is stored alongside it in a `.pkl` file.
+
+### 2. The Retrieval & Generation Pipeline (Q&A)
+When a user asks a question via the UI, the backend processes it as follows:
+- **Question Classification (`rag/question_type.py`)**: The system determines if the user is asking for a summary, an explanation, or a specific fact based on the input text.
+- **Query Embedding**: The user's question is embedded into a vector using the same `nomic-embed-text` model.
+- **Advanced Retrieval (MMR)**: The system searches the FAISS index for chunks that are semantically similar to the question's embedding. Instead of just picking the top results, it uses **MMR (Maximal Marginal Relevance)**. MMR balances *relevance* (how well it answers the question) with *diversity* (ensuring we don't just pull 3 chunks that say the exact same thing).
+- **Context Assembly**: The retrieved chunks are formatted into a context block, appending the source document name and page number. If it's a chat, the recent conversation history is also prepended to maintain context.
+- **Generation (`rag/generator.py`)**: A prompt is constructed containing the System Role (Student, Researcher, or Reviewer), the assembled context, and the user's question. This is sent to the local `llama3.2:latest` model via Ollama to generate a grounded, natural language response.
+
+---
+
+## 💻 Tech Stack Deep Dive
+
+- **Backend (FastAPI)**: Found in `api/app.py`. Exposes endpoints like `/ask`, `/upload`, `/summarize`, and `/compare`. Chosen for its speed, asynchronous capabilities, and automatic documentation generation (Swagger UI).
+- **Frontend (Streamlit)**: Found in `ui/app.py`. Provides a chat interface, sidebar for file uploads, and specific modes for Q&A, Summarization, and Comparison.
+- **Local LLM Engine (Ollama)**: Handles both text generation (`llama3.2:latest`) and embeddings (`nomic-embed-text`) entirely locally.
+- **Vector Database (FAISS)**: An efficient, CPU-friendly library for dense vector similarity search, enabling quick retrieval even on machines without a GPU.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+1. Python 3.10+
+2. [Ollama](https://ollama.ai) installed and running locally.
+3. Pull required models via terminal: 
    ```bash
    ollama pull llama3.2:latest
    ollama pull nomic-embed-text
    ```
-4. **(Optional)** Environment variables:
-   - `OLLAMA_BASE`: Custom Ollama endpoint (default: `http://localhost:11434`)
-   - `OLLAMA_GEN_MODEL`: Alternative generation model (default: `llama3.2:latest`)
 
-## 🚀 Installation
-
+### Installation
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd Research_rag
-
-# Create virtual environment
+# Clone the repository and setup virtual environment
 python -m venv .venv
 
-# Activate (Windows)
+# Activate the virtual environment
+# On Windows:
 .\.venv\Scripts\activate
-
-# Activate (macOS/Linux)
+# On Mac/Linux:
 source .venv/bin/activate
 
 # Install dependencies
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 📁 Project Structure
-
-```
-Research_rag/
-├── api/
-│   └── app.py                 # FastAPI server (ask, upload, summarize, compare)
-├── ui/
-│   └── app.py                 # Streamlit interface with chat/summary/compare modes
-├── ingest/
-│   ├── load_pdf.py           # PDF loader with page extraction
-│   ├── chunk.py              # Text chunking with overlap
-│   └── embed.py              # Ollama embedding wrapper
-├── rag/
-│   ├── vectorstore.py        # FAISS wrapper with MMR search
-│   ├── generator.py          # LLM generation with role/mode prompting
-│   ├── question_type.py      # Question classification (summary/explanation/fact)
-│   ├── ingest_index.py       # CLI: Build FAISS index from data/papers/
-│   └── query.py              # CLI: Query the index directly
-├── data/
-│   └── papers/               # Place your PDFs here
-└── rag/index/
-    ├── faiss.index           # Persisted FAISS index
-    └── metadata.pkl          # Chunk metadata (source, page, text)
-```
-
-## ⚡ Quickstart
-
-### 1. Prepare Your Papers
-
-Place PDF research papers in `data/papers/`:
-
-```bash
-mkdir -p data/papers
-cp your_paper.pdf data/papers/
-```
-
-### 2. Build the Index
-
-```bash
-python -m rag.ingest_index
-```
-
-This will:
-
-- Load all PDFs from `data/papers/`
-- Chunk documents with overlap (500 chars, 100 overlap)
-- Generate 768-dim embeddings via Ollama
-- Save FAISS index to `rag/index/`
-
-### 3. Start the Backend
-
-```bash
-uvicorn api.app:app --reload
-```
-
-API runs at `http://localhost:8000` • Auto-reloads on code changes
-
-### 4. Launch the UI
-
-In a separate terminal:
-
-```bash
-streamlit run ui/app.py
-```
-
-UI opens at `http://localhost:8501`
-
-### 5. Start Chatting!
-
-- Upload more PDFs from the sidebar
-- Switch between **Chat**, **Summarize**, and **Compare** modes
-- Select your role (**Student**/**Researcher**/**Reviewer**) for tailored responses
-
-## 🔧 API Reference
-
-Base URL: `http://localhost:8000`
-
-### Endpoints
-
-#### Health Check
-
-```bash
-GET /
-```
-
-Returns `{"status": "running"}`
-
-#### Ask Question
-
-```bash
-POST /ask
-Content-Type: application/json
-
-{
-  "question": "What is the main contribution of this paper?",
-  "session_id": "uuid-string",
-  "role": "student"  # student | researcher | reviewer
-}
-```
-
-Returns: `{"answer": "...", "sources": ["paper.pdf (page 3) — 95.2%", ...]}`
-
-#### Upload PDF
-
-```bash
-POST /upload
-Content-Type: multipart/form-data
-
-file: <pdf-file>
-```
-
-Returns: `{"status": "success", "file": "paper.pdf", "chunks_added": 42}`
-
-#### Summarize Papers
-
-```bash
-POST /summarize?role=student
-```
-
-Returns: `{"summary": "..."}`
-
-#### Compare Papers
-
-```bash
-POST /compare
-Content-Type: application/json
-
-{
-  "paper_a": "transformer.pdf",
-  "paper_b": "bert.pdf",
-  "role": "researcher"
-}
-```
-
-Returns: `{"comparison": "..."}`
-
-#### List Papers
-
-```bash
-GET /papers
-```
-
-Returns: `{"papers": ["paper1.pdf", "paper2.pdf"]}`
-
-#### Get Paper Text
-
-```bash
-GET /paper_text?name=paper.pdf
-```
-
-Returns: `{"text": "concatenated chunk text..."}`
-
-## 🔍 How It Works
-
-### Ingestion Pipeline
-
-```
-1. PDF Loading (load_pdf.py)
-   ↓
-2. Text Chunking (chunk.py)
-   • 500 characters per chunk
-   • 100 character overlap
-   ↓
-3. Embeddings (embed.py)
-   • Ollama nomic-embed-text
-   • 768-dimensional vectors
-   ↓
-4. FAISS Indexing (vectorstore.py)
-   • Cosine similarity
-   • MMR search
-```
-
-### Query Pipeline
-
-```
-User Question
-   ↓
-1. Question Classification (question_type.py)
-   • summary | explanation | fact
-   ↓
-2. Embedding (embed.py)
-   ↓
-3. MMR Retrieval (vectorstore.py)
-   • Balance relevance & diversity
-   • Top-k chunks with scores
-   ↓
-4. Context Building
-   • Combine chunks with citations
-   • Add conversation history
-   ↓
-5. Generation (generator.py)
-   • Role-aware prompting
-   • Grounded in context
-   ↓
-Answer + Citations
-```
-
-## 🎯 Advanced Features
-
-### Maximal Marginal Relevance (MMR)
-
-Retrieval uses MMR to balance:
-
-- **Relevance**: Similarity to query
-- **Diversity**: Dissimilarity to already-selected chunks
-
-This prevents redundant results and provides broader context.
-
-### Role-Aware Generation
-
-- **Student**: Simple explanations, minimal jargon, short examples
-- **Researcher**: Technical precision, domain terminology, complete details
-- **Reviewer**: Critical analysis, identifies strengths/weaknesses/assumptions
-
-### Question Classification
-
-Automatically detects question type to optimize prompting:
-
-- **Summary**: Structured overview (problem, methods, contributions, conclusions)
-- **Explanation**: Detailed "how" and "why" answers
-- **Fact**: Direct answers from context
-
-### Conversational Memory
-
-Maintains last 6 exchanges per session for context-aware follow-ups.
-
-## ⚠️ Troubleshooting
-
-### Backend Returns 500 on Ask/Upload
-
-**Cause**: Ollama not running or models not pulled  
-**Solution**:
-
-```bash
-# Check Ollama is running
-curl http://localhost:11434/api/tags
-
-# Pull required models
-ollama pull llama3.2:latest
-ollama pull nomic-embed-text
-```
-
-### Empty or Irrelevant Retrieval
-
-**Cause**: Index not built or outdated  
-**Solution**: Rebuild the index after adding PDFs
-
-```bash
-python -m rag.ingest_index
-```
-
-### Streamlit Cannot Reach Backend
-
-**Cause**: API not running on port 8000  
-**Solution**: Start Uvicorn or update `API_BASE` in [ui/app.py](ui/app.py)
-
-```bash
-uvicorn api.app:app --reload
-```
-
-### FAISS Import Error
-
-**Cause**: Platform-specific installation issue  
-**Solution**:
-
-```bash
-# For CPU-only systems
-pip install faiss-cpu
-
-# For GPU systems (optional)
-pip install faiss-gpu
-```
-
-### "RuntimeError: Run ingest_index first"
-
-**Cause**: No FAISS index found  
-**Solution**: Create initial index
-
-```bash
-mkdir -p data/papers
-cp your_paper.pdf data/papers/
-python -m rag.ingest_index
-```
-
-### Slow Response Times
-
-**Cause**: Large context or slow model  
-**Solution**:
-
-- Reduce `top_k` in retrieval (default: 3)
-- Use smaller/faster Ollama model (e.g., `llama3.2:1b`)
-- Adjust `max_tokens` in [rag/generator.py](rag/generator.py)
-
-## 🛠️ Development
-
-### CLI Tools
-
-#### Build Index
-
-```bash
-python -m rag.ingest_index
-```
-
-Rebuilds FAISS index from all PDFs in `data/papers/`
-
-#### Query Index Directly
-
-```bash
-python -m rag.query
-```
-
-Interactive CLI for testing retrieval and generation without the UI
-
-### Configuration
-
-#### Change Embedding Model
-
-Edit [ingest/embed.py](ingest/embed.py):
-
-```python
-EMBED_MODEL = "nomic-embed-text"  # or mxbai-embed-large, etc.
-```
-
-#### Change Generation Model
-
-Set environment variable:
-
-```bash
-export OLLAMA_GEN_MODEL="llama3.2:3b"  # or mixtral, etc.
-```
-
-#### Adjust Chunking
-
-Edit [ingest/chunk.py](ingest/chunk.py):
-
-```python
-chunk_size = 500   # characters per chunk
-overlap = 100      # overlap between chunks
-```
-
-#### Tune Retrieval
-
-Edit [api/app.py](api/app.py) in the ask endpoint:
-
-```python
-top_chunks = store.search_mmr(
-    query_embedding,
-    top_k=3,           # number of chunks
-    fetch_k=10,        # candidate pool
-    lambda_mult=0.5    # relevance vs diversity (0-1)
-)
-```
-
-### Testing
-
-Run individual modules:
-
-```bash
-# Test embedding
-python ingest/embed.py
-
-# Test chunking
-python ingest/chunk.py
-
-# Test retrieval pipeline
-python rag/retriever.py
-```
-## 📝 License
-
-MIT License - feel free to use this project for research or commercial purposes.
-
+### Running the Application
+1. **Start the API (Backend)**: 
+   Open a terminal and run:
+   ```bash
+   uvicorn api.app:app --reload
+   ```
+   *The API will be available at `http://localhost:8000`*
+
+2. **Start the UI (Frontend)**:
+   Open a second terminal and run:
+   ```bash
+   streamlit run ui/app.py
+   ```
+   *The UI will open in your browser at `http://localhost:8501`*
+
+*(Optional) You can place PDFs in `data/papers/` and run `python -m rag.ingest_index` to build the index manually via CLI.*
+
+---
+
+## 💡 Proposed Improvements (Future Roadmap)
+
+If we were to scale this project or push it to production, here are several architectural and feature improvements that could be made:
+
+### 1. Architectural & Scaling Improvements
+- **Persistent Vector Database**: Migrate from a local FAISS index (pickle/binary files) to a robust, persistent vector database like **ChromaDB**, **Pinecone**, or **Milvus**. This would allow concurrent writes, better scaling, easier metadata filtering, and eliminate the need to manually manage index files.
+- **Asynchronous Ingestion (Message Queue)**: Currently, uploading and indexing a PDF blocks the FastAPI thread. For large PDFs, this could cause timeouts. Implementing a task queue (like **Celery** or **Redis Queue**) would allow PDFs to be processed in the background, returning an immediate "processing" response to the UI.
+- **Better Chunking Strategy**: Move from naive character-based chunking to **Semantic Chunking** or **Recursive Character Text Splitting** (e.g., using LangChain or LlamaIndex). This ensures we don't break sentences or paragraphs in half, preserving semantic meaning and improving context quality.
+
+### 2. Retrieval Enhancements
+- **Hybrid Search**: Combine dense vector search (FAISS) with sparse keyword search (like BM25). This is highly effective because dense search is great for semantic meaning, but sparse search is better for exact keyword matches (like specific acronyms, variables, or author names).
+- **Re-ranking**: Introduce a cross-encoder model (e.g., Cohere Re-rank or a local `sentence-transformers` cross-encoder) after the initial FAISS retrieval. The vector DB could fetch the top 20 results quickly, and the cross-encoder precisely ranks the top 5 to pass to the LLM, drastically improving accuracy.
+
+### 3. User Experience & Application Features
+- **Advanced Document Parsing**: Replace `pypdf` with a more advanced OCR/Parsing tool (like `Nougat`, `Grobid`, or `Unstructured.io`) that can correctly parse tables, math formulas, and multi-column layouts typical in academic papers.
+- **Source Highlighting**: Pass the exact bounding boxes of the text back to the frontend so the Streamlit UI can render the PDF visually and highlight the exact paragraph the LLM used to answer the question.
+- **Session & User Management**: Add a relational database (like PostgreSQL/SQLite) to store user profiles, maintain persistent multi-turn chat histories across sessions, and allow users to manage their personal library of papers.
