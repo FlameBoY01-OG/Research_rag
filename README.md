@@ -25,7 +25,7 @@ Before the system can answer questions, it needs to understand the documents. Th
 - **Embedding (`ingest/embed.py`)**: Each text chunk is converted into a 768-dimensional numerical vector using the `nomic-embed-text` model via Ollama. Embeddings capture the semantic meaning of the text.
 - **Vector Storage (`rag/vectorstore.py`)**: The embeddings are stored in a **FAISS** (Facebook AI Similarity Search) index using Inner Product (Cosine Similarity). FAISS allows for lightning-fast similarity searches across thousands of chunks. Metadata (source file, page number, raw text) is stored alongside it in a `.pkl` file.
 
-### 2. The Retrieval & Generation Pipeline (Q&A)
+### 2. The Retrieval & Generation Pipeline
 When a user asks a question via the UI, the backend processes it as follows:
 - **Question Classification (`rag/question_type.py`)**: The system determines if the user is asking for a summary, an explanation, or a specific fact based on the input text.
 - **Query Embedding**: The user's question is embedded into a vector using the same `nomic-embed-text` model.
