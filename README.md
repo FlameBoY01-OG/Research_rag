@@ -88,21 +88,3 @@ pip install -r requirements.txt
 *(Optional) You can place PDFs in `data/papers/` and run `python -m rag.ingest_index` to build the index manually via CLI.*
 
 ---
-
-## 💡 Proposed Improvements (Future Roadmap)
-
-If we were to scale this project or push it to production, here are several architectural and feature improvements that could be made:
-
-### 1. Architectural & Scaling Improvements
-- **Persistent Vector Database**: Migrate from a local FAISS index (pickle/binary files) to a robust, persistent vector database like **ChromaDB**, **Pinecone**, or **Milvus**. This would allow concurrent writes, better scaling, easier metadata filtering, and eliminate the need to manually manage index files.
-- **Asynchronous Ingestion (Message Queue)**: Currently, uploading and indexing a PDF blocks the FastAPI thread. For large PDFs, this could cause timeouts. Implementing a task queue (like **Celery** or **Redis Queue**) would allow PDFs to be processed in the background, returning an immediate "processing" response to the UI.
-- **Better Chunking Strategy**: Move from naive character-based chunking to **Semantic Chunking** or **Recursive Character Text Splitting** (e.g., using LangChain or LlamaIndex). This ensures we don't break sentences or paragraphs in half, preserving semantic meaning and improving context quality.
-
-### 2. Retrieval Enhancements
-- **Hybrid Search**: Combine dense vector search (FAISS) with sparse keyword search (like BM25). This is highly effective because dense search is great for semantic meaning, but sparse search is better for exact keyword matches (like specific acronyms, variables, or author names).
-- **Re-ranking**: Introduce a cross-encoder model (e.g., Cohere Re-rank or a local `sentence-transformers` cross-encoder) after the initial FAISS retrieval. The vector DB could fetch the top 20 results quickly, and the cross-encoder precisely ranks the top 5 to pass to the LLM, drastically improving accuracy.
-
-### 3. User Experience & Application Features
-- **Advanced Document Parsing**: Replace `pypdf` with a more advanced OCR/Parsing tool (like `Nougat`, `Grobid`, or `Unstructured.io`) that can correctly parse tables, math formulas, and multi-column layouts typical in academic papers.
-- **Source Highlighting**: Pass the exact bounding boxes of the text back to the frontend so the Streamlit UI can render the PDF visually and highlight the exact paragraph the LLM used to answer the question.
-- **Session & User Management**: Add a relational database (like PostgreSQL/SQLite) to store user profiles, maintain persistent multi-turn chat histories across sessions, and allow users to manage their personal library of papers.
